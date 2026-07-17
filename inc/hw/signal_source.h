@@ -19,7 +19,7 @@
 
 #include "config/signal_source_config.h"
 
-namespace HW {
+namespace hardware {
 
     // Invoked from the device's capture thread with a raw buffer of IQ samples.
     // The buffer is only valid for the duration of the call.
@@ -61,4 +61,4 @@ namespace HW {
     // implemented yet.
     std::unique_ptr<signal_source> create_signal_source_from_file(const std::string &json_config_path);
 
-} // namespace HW
+} // namespace hardware

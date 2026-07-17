@@ -42,16 +42,16 @@ namespace config {
             cfg.type = parse_source_type(std::string(v->as_string()));
         }
         if (const auto *v = obj.if_contains("frequency_hz")) {
-            cfg.frequency_hz = static_cast<uint64_t>(v->to_number<double>());
+            cfg.frequency_hz = v->to_number<uint64_t>();
         }
         if (const auto *v = obj.if_contains("sample_rate_hz")) {
-            cfg.sample_rate_hz = static_cast<uint32_t>(v->to_number<double>());
+            cfg.sample_rate_hz = v->to_number<uint32_t>();
         }
         if (const auto *v = obj.if_contains("lna_gain_db")) {
-            cfg.lna_gain_db = static_cast<uint32_t>(v->to_number<double>());
+            cfg.lna_gain_db = v->to_number<uint32_t>();
         }
         if (const auto *v = obj.if_contains("vga_gain_db")) {
-            cfg.vga_gain_db = static_cast<uint32_t>(v->to_number<double>());
+            cfg.vga_gain_db = v->to_number<uint32_t>();
         }
         if (const auto *v = obj.if_contains("amp_enable")) {
             cfg.amp_enable = v->as_bool();

@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <utility>
 
-namespace HW {
+namespace hardware {
 
     namespace {
         // hackrf_init()/hackrf_exit() are process-global, so only call them
@@ -28,6 +28,20 @@ namespace HW {
                 return false;
             }
             return true;
+        }
+
+        // Clamps value to [0, max_value] and rounds down to the nearest valid step,
+        // warning on stderr if the requested value had to be adjusted.
+        uint32_t clamp_gain(uint32_t value, uint32_t max_value, uint32_t step, const char *what) {
+            uint32_t clamped = value > max_value ? max_value : value;
+            clamped -= clamped % step;
+
+            if (clamped != value) {
+                std::fprintf(stderr, "hackrf: %s %u dB out of range/step (0-%u, step %u), using %u dB\n", what,
+                             value, max_value, step, clamped);
+            }
+
+            return clamped;
         }
     }
 
@@ -60,15 +74,31 @@ namespace HW {
         if (!check(hackrf_set_sample_rate(m_device, m_config.sample_rate_hz), "hackrf_set_sample_rate")) {
             ok = false;
         }
+
+        // The MAX2837 baseband filter doesn't track the sample rate on its own;
+        // hackrf_set_sample_rate() only picks a firmware-default bandwidth (<=0.75*Fs).
+        // Set it explicitly so it always matches the configured sample rate.
+        const uint32_t baseband_filter_bw_hz =
+            hackrf_compute_baseband_filter_bw_round_down_lt(m_config.sample_rate_hz);
+        if (!check(hackrf_set_baseband_filter_bandwidth(m_device, baseband_filter_bw_hz),
+                   "hackrf_set_baseband_filter_bandwidth")) {
+            ok = false;
+        }
+
         if (!check(hackrf_set_freq(m_device, m_config.frequency_hz), "hackrf_set_freq")) {
             ok = false;
         }
-        if (!check(hackrf_set_lna_gain(m_device, m_config.lna_gain_db), "hackrf_set_lna_gain")) {
+
+        const uint32_t lna_gain_db = clamp_gain(m_config.lna_gain_db, 40, 8, "hackrf_set_lna_gain");
+        if (!check(hackrf_set_lna_gain(m_device, lna_gain_db), "hackrf_set_lna_gain")) {
             ok = false;
         }
-        if (!check(hackrf_set_vga_gain(m_device, m_config.vga_gain_db), "hackrf_set_vga_gain")) {
+
+        const uint32_t vga_gain_db = clamp_gain(m_config.vga_gain_db, 62, 2, "hackrf_set_vga_gain");
+        if (!check(hackrf_set_vga_gain(m_device, vga_gain_db), "hackrf_set_vga_gain")) {
             ok = false;
         }
+
         if (!check(hackrf_set_amp_enable(m_device, m_config.amp_enable ? 1 : 0), "hackrf_set_amp_enable")) {
             ok = false;
         }
@@ -132,4 +162,4 @@ namespace HW {
         return 0;
     }
 
-} // namespace HW
+} // namespace hardware

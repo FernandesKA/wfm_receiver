@@ -17,7 +17,7 @@
 
 #include "hw/signal_source.h"
 
-namespace HW {
+namespace hardware {
 
     class hack_rf final : public signal_source {
     public:
@@ -38,4 +38,4 @@ namespace HW {
         std::atomic<bool> m_running{false};
     };
 
-} // namespace HW
+} // namespace hardware

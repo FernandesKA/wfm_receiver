@@ -14,7 +14,7 @@
 #include "config/json_config_loader.h"
 #include "hw/hack_rf.h"
 
-namespace HW {
+namespace hardware {
 
     std::unique_ptr<signal_source> create_signal_source(const config::signal_source_config &cfg) {
         switch (cfg.type) {
@@ -30,4 +30,4 @@ namespace HW {
         return create_signal_source(config::load_signal_source_config(json_config_path));
     }
 
-} // namespace HW
+} // namespace hardware

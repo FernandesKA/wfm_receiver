@@ -13,21 +13,15 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
-#include <cstddef>
 #include <cstdint>
-#include <iomanip>
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
 
-#include <boost/program_options.hpp>
-
-#include "config/json_config_loader.h"
 #include "dsp/amplitude_monitor.h"
 #include "hw/signal_source.h"
-
-namespace po = boost::program_options;
 
 namespace {
 
@@ -37,93 +31,19 @@ namespace {
         g_running.store(false);
     }
 
-    std::string source_type_name(config::signal_source_type type) {
-        switch (type) {
-        case config::signal_source_type::hack_rf:
-            return "HackRF";
-        case config::signal_source_type::pluto_sdr:
-            return "PlutoSDR";
-        }
-        return "unknown";
-    }
-
-    void print_config(const config::signal_source_config &cfg) {
-        std::cout << std::fixed << std::setprecision(3)
-                   << "Signal source parameters:\n"
-                   << "  source        : " << source_type_name(cfg.type) << "\n"
-                   << "  frequency     : " << cfg.frequency_hz / 1'000'000.0 << " MHz\n"
-                   << "  sample rate   : " << cfg.sample_rate_hz / 1'000'000.0 << " MHz\n"
-                   << "  LNA gain      : " << cfg.lna_gain_db << " dB\n"
-                   << "  VGA gain      : " << cfg.vga_gain_db << " dB\n"
-                   << "  amp enable    : " << (cfg.amp_enable ? "yes" : "no") << "\n"
-                   << "  serial number : " << (cfg.serial_number.empty() ? "(auto)" : cfg.serial_number)
-                   << std::endl;
-        std::cout.unsetf(std::ios::fixed);
-    }
-
 } // namespace
 
 int main(int argc, char **argv) {
-    po::options_description desc("wfm_receiver_demo options");
-    // clang-format off
-    desc.add_options()
-        ("help,h", "print this help message")
-        ("config,c", po::value<std::string>()->default_value("configs/signal_source.json"),
-            "path to JSON signal source config")
-        ("frequency,f", po::value<uint64_t>(), "center frequency in Hz (overrides config)")
-        ("sample-rate,s", po::value<uint32_t>(), "sample rate in Hz (overrides config)")
-        ("lna-gain", po::value<uint32_t>(), "HackRF LNA gain in dB, 0-40 step 8 (overrides config)")
-        ("vga-gain", po::value<uint32_t>(), "HackRF VGA gain in dB, 0-62 step 2 (overrides config)")
-        ("amp-enable", po::value<bool>(), "enable HackRF front-end amp (overrides config)")
-        ("serial", po::value<std::string>(), "device serial number (overrides config)");
-    // clang-format on
+    const std::string config_path = argc > 1 ? argv[1] : "configs/signal_source.json";
 
-    po::variables_map vm;
+    std::unique_ptr<hardware::signal_source> source;
     try {
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-        po::notify(vm);
-    } catch (const po::error &e) {
-        std::cerr << "argument error: " << e.what() << "\n\n" << desc << std::endl;
-        return 1;
-    }
-
-    if (vm.count("help")) {
-        std::cout << desc << std::endl;
-        return 0;
-    }
-
-    const std::string config_path = vm["config"].as<std::string>();
-
-    config::signal_source_config cfg;
-    try {
-        cfg = config::load_signal_source_config(config_path);
+        source = hardware::create_signal_source_from_file(config_path);
     } catch (const std::exception &e) {
         std::cerr << "failed to load config '" << config_path << "': " << e.what() << std::endl;
         return 1;
     }
 
-    if (vm.count("frequency")) {
-        cfg.frequency_hz = vm["frequency"].as<uint64_t>();
-    }
-    if (vm.count("sample-rate")) {
-        cfg.sample_rate_hz = vm["sample-rate"].as<uint32_t>();
-    }
-    if (vm.count("lna-gain")) {
-        cfg.lna_gain_db = vm["lna-gain"].as<uint32_t>();
-    }
-    if (vm.count("vga-gain")) {
-        cfg.vga_gain_db = vm["vga-gain"].as<uint32_t>();
-    }
-    if (vm.count("amp-enable")) {
-        cfg.amp_enable = vm["amp-enable"].as<bool>();
-    }
-    if (vm.count("serial")) {
-        cfg.serial_number = vm["serial"].as<std::string>();
-    }
-
-    print_config(cfg);
-
-    std::unique_ptr<HW::signal_source> source = HW::create_signal_source(cfg);
     if (!source) {
         std::cerr << "signal source type from config is not supported yet" << std::endl;
         return 1;
