@@ -16,6 +16,7 @@ add_library(wfm_hw
     src/hw/hack_rf.cpp
     src/config/json_config_loader.cpp
     src/dsp/amplitude_monitor.cpp
+    src/dsp/equiripple_filter.cpp
 )
 
 target_include_directories(wfm_hw
