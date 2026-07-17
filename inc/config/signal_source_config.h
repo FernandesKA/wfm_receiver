@@ -21,11 +21,17 @@ namespace config {
         pluto_sdr, // not implemented yet
     };
 
+    // Fixed capture sample rate: HackRF only supports 2-20 MHz, so 2 MHz is
+    // both its own hardware floor and already 10x the ~200 kHz a WFM channel
+    // needs. Not user-configurable on purpose - the channel filter and
+    // decimator downstream are built against this exact rate, so changing it
+    // at runtime would mean recomputing their coefficients on the fly.
+    inline constexpr uint32_t hackrf_sample_rate_hz = 2'000'000;
+
     struct signal_source_config {
         signal_source_type type = signal_source_type::hack_rf;
 
         uint64_t frequency_hz = 100'000'000;
-        uint32_t sample_rate_hz = 2'000'000;
 
         // HackRF specific gains (ignored by sources that don't support them)
         uint32_t lna_gain_db = 16; // 0-40 dB, step 8

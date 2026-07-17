@@ -52,7 +52,7 @@ namespace {
                    << "Signal source parameters:\n"
                    << "  source        : " << source_type_name(cfg.type) << "\n"
                    << "  frequency     : " << cfg.frequency_hz / 1'000'000.0 << " MHz\n"
-                   << "  sample rate   : " << cfg.sample_rate_hz / 1'000'000.0 << " MHz\n"
+                   << "  sample rate   : " << config::hackrf_sample_rate_hz / 1'000'000.0 << " MHz (fixed)\n"
                    << "  LNA gain      : " << cfg.lna_gain_db << " dB\n"
                    << "  VGA gain      : " << cfg.vga_gain_db << " dB\n"
                    << "  amp enable    : " << (cfg.amp_enable ? "yes" : "no") << "\n"
@@ -71,7 +71,6 @@ int main(int argc, char **argv) {
         ("config,c", po::value<std::string>()->default_value("configs/signal_source.json"),
             "path to JSON signal source config")
         ("frequency,f", po::value<uint64_t>(), "center frequency in Hz (overrides config)")
-        ("sample-rate,s", po::value<uint32_t>(), "sample rate in Hz (overrides config)")
         ("lna-gain", po::value<uint32_t>(), "HackRF LNA gain in dB, 0-40 step 8 (overrides config)")
         ("vga-gain", po::value<uint32_t>(), "HackRF VGA gain in dB, 0-62 step 2 (overrides config)")
         ("amp-enable", po::value<bool>(), "enable HackRF front-end amp (overrides config)")
@@ -104,9 +103,6 @@ int main(int argc, char **argv) {
 
     if (vm.count("frequency")) {
         cfg.frequency_hz = vm["frequency"].as<uint64_t>();
-    }
-    if (vm.count("sample-rate")) {
-        cfg.sample_rate_hz = vm["sample-rate"].as<uint32_t>();
     }
     if (vm.count("lna-gain")) {
         cfg.lna_gain_db = vm["lna-gain"].as<uint32_t>();

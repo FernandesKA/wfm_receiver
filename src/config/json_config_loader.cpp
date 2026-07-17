@@ -44,9 +44,6 @@ namespace config {
         if (const auto *v = obj.if_contains("frequency_hz")) {
             cfg.frequency_hz = v->to_number<uint64_t>();
         }
-        if (const auto *v = obj.if_contains("sample_rate_hz")) {
-            cfg.sample_rate_hz = v->to_number<uint32_t>();
-        }
         if (const auto *v = obj.if_contains("lna_gain_db")) {
             cfg.lna_gain_db = v->to_number<uint32_t>();
         }

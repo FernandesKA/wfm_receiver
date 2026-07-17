@@ -1,7 +1,6 @@
 {
     "source": "hack_rf",
     "frequency_hz": 100000000,
-    "sample_rate_hz": 2000000,
     "lna_gain_db": 16,
     "vga_gain_db": 20,
     "amp_enable": false,

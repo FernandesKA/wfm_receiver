@@ -71,15 +71,15 @@ namespace hardware {
         }
 
         bool ok = true;
-        if (!check(hackrf_set_sample_rate(m_device, m_config.sample_rate_hz), "hackrf_set_sample_rate")) {
+        if (!check(hackrf_set_sample_rate(m_device, config::hackrf_sample_rate_hz), "hackrf_set_sample_rate")) {
             ok = false;
         }
 
         // The MAX2837 baseband filter doesn't track the sample rate on its own;
         // hackrf_set_sample_rate() only picks a firmware-default bandwidth (<=0.75*Fs).
-        // Set it explicitly so it always matches the configured sample rate.
+        // Set it explicitly so it always matches the (fixed) capture sample rate.
         const uint32_t baseband_filter_bw_hz =
-            hackrf_compute_baseband_filter_bw_round_down_lt(m_config.sample_rate_hz);
+            hackrf_compute_baseband_filter_bw_round_down_lt(config::hackrf_sample_rate_hz);
         if (!check(hackrf_set_baseband_filter_bandwidth(m_device, baseband_filter_bw_hz),
                    "hackrf_set_baseband_filter_bandwidth")) {
             ok = false;

@@ -13,14 +13,18 @@
 
 #include <cstdint>
 
+#include "config/signal_source_config.h"
+
 namespace config {
 
     // Shared by both resampling stages in the receive chain: IQ decimation
     // (wideband capture rate down toward the channel bandwidth) and the
     // final audio resampling stage (demodulated signal down to the sound
-    // card's rate) - both just need an input/output rate pair.
+    // card's rate) - both just need an input/output rate pair. The default
+    // below matches the IQ decimation stage; the audio stage should
+    // construct its own instance with rates appropriate to that leg.
     struct resampler_config {
-        uint32_t input_sample_rate_hz = 2'000'000;
+        uint32_t input_sample_rate_hz = hackrf_sample_rate_hz;
         uint32_t output_sample_rate_hz = 200'000;
     };
 
