@@ -24,7 +24,8 @@ namespace config {
     //   "lna_gain_db"    : integer (HackRF only)
     //   "vga_gain_db"    : integer (HackRF only)
     //   "amp_enable"     : bool    (HackRF only)
-    //   "rx_gain_db"     : integer (PlutoSDR only)
+    //   "gain_control_mode" : "manual" | "fast_attack" | "slow_attack" | "hybrid" (PlutoSDR only)
+    //   "rx_gain_db"     : integer (PlutoSDR only, manual mode only)
     //   "serial_number"  : string  (HackRF only)
     //   "uri"            : string  (PlutoSDR only, e.g. "usb:5.7.5", "ip:192.168.2.1")
     // Sample rate is not configurable: it's fixed at config::hackrf_sample_rate_hz

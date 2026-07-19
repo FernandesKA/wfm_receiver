@@ -7,6 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(HACKRF REQUIRED libhackrf)
+pkg_check_modules(ALSA REQUIRED alsa)
 
 find_package(Boost 1.75 REQUIRED COMPONENTS json program_options)
 find_package(Threads REQUIRED)
@@ -22,11 +23,15 @@ add_library(wfm_hw
     src/hw/signal_source.cpp
     src/hw/hack_rf.cpp
     src/hw/pluto_sdr.cpp
+    src/hw/audio_sink.cpp
+    src/hw/alsa_sink.cpp
     src/config/json_config_loader.cpp
     src/dsp/amplitude_monitor.cpp
     src/dsp/equiripple_filter.cpp
     src/dsp/iq_converter.cpp
     src/dsp/quadrature_demodulator.cpp
+    src/dsp/rc_deemphasis_filter.cpp
+    src/dsp/audio_resampler.cpp
 )
 
 target_include_directories(wfm_hw
@@ -35,17 +40,19 @@ target_include_directories(wfm_hw
     PRIVATE
         ${HACKRF_INCLUDE_DIRS}
         ${IIO_INCLUDE_DIR}
+        ${ALSA_INCLUDE_DIRS}
 )
 
 target_link_libraries(wfm_hw
     PUBLIC
         ${HACKRF_LIBRARIES}
         ${IIO_LIBRARY}
+        ${ALSA_LIBRARIES}
         Boost::json
         Threads::Threads
 )
 
-target_compile_options(wfm_hw PRIVATE ${HACKRF_CFLAGS_OTHER})
+target_compile_options(wfm_hw PRIVATE ${HACKRF_CFLAGS_OTHER} ${ALSA_CFLAGS_OTHER})
 
 add_executable(wfm_receiver_demo src/app/main.cpp)
 target_link_libraries(wfm_receiver_demo PRIVATE wfm_hw Boost::program_options)

@@ -106,12 +106,16 @@ namespace hardware {
                    "sampling_frequency")) {
             ok = false;
         }
-        if (!check(iio_channel_attr_write(rx_cfg_chn, "gain_control_mode", "manual"), "gain_control_mode")) {
+        if (!check(iio_channel_attr_write(rx_cfg_chn, "gain_control_mode", m_config.gain_control_mode.c_str()),
+                   "gain_control_mode")) {
             ok = false;
         }
-        if (!check(iio_channel_attr_write_double(rx_cfg_chn, "hardwaregain", static_cast<double>(m_config.rx_gain_db)),
-                   "hardwaregain")) {
-            ok = false;
+        if (m_config.gain_control_mode == "manual") {
+            if (!check(iio_channel_attr_write_double(rx_cfg_chn, "hardwaregain",
+                                                      static_cast<double>(m_config.rx_gain_db)),
+                       "hardwaregain")) {
+                ok = false;
+            }
         }
         if (!check(iio_channel_attr_write_longlong(lo_chn, "frequency", static_cast<long long>(m_config.frequency_hz)),
                    "RX LO frequency")) {

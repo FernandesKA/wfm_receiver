@@ -1,6 +1,7 @@
 {
     "source": "pluto_sdr",
     "frequency_hz": 100000000,
+    "gain_control_mode": "fast_attack",
     "rx_gain_db": 40,
     "uri": ""
 }

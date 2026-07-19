@@ -53,9 +53,16 @@ namespace config {
         uint32_t vga_gain_db = 20; // 0-62 dB, step 2
         bool amp_enable = false;
 
-        // PlutoSDR specific manual RX gain (ignored by other sources).
-        // AD9361 gain range is roughly 0-76 dB depending on band; not
-        // step-quantized like HackRF's, so it isn't clamped/rounded.
+        // PlutoSDR specific gain control mode (ignored by other sources):
+        // "manual" | "fast_attack" | "slow_attack" | "hybrid". In manual
+        // mode rx_gain_db is applied; in the AGC modes rx_gain_db is
+        // ignored (the AD9361 picks its own gain).
+        std::string gain_control_mode = "manual";
+
+        // PlutoSDR specific manual RX gain (ignored by other sources, and by
+        // AGC gain_control_modes). AD9361 gain range is roughly 0-76 dB
+        // depending on band; not step-quantized like HackRF's, so it isn't
+        // clamped/rounded.
         uint32_t rx_gain_db = 40;
 
         std::string serial_number; // HackRF only; empty => first device found
