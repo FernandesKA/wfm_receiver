@@ -70,6 +70,7 @@ namespace hardware {
                 snd_pcm_writei(m_pcm, samples + written, static_cast<snd_pcm_uframes_t>(count - written));
 
             if (result == -EPIPE) {
+                std::fprintf(stderr, "alsa_sink: underrun (XRUN), recovering\n");
                 snd_pcm_prepare(m_pcm); // underrun: recover and retry
                 continue;
             }

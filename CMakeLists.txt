@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 project(wfm_receiver LANGUAGES CXX)
 
+# Real-time DSP work here (FIR filters, resampling) is orders of magnitude
+# slower unoptimized; default to Release unless the caller asks for
+# something else explicitly.
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

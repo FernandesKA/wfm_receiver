@@ -10,15 +10,19 @@
  *
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <complex>
+#include <condition_variable>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -91,6 +95,65 @@ namespace {
         return cfg.type == config::signal_source_type::pluto_sdr ? config::pluto_sample_rate_hz
                                                                    : config::hackrf_sample_rate_hz;
     }
+
+    // Thread-safe bounded buffer: decouples the capture thread (producer -
+    // pushes audio samples straight from the DSP chain, must never block)
+    // from the playback thread (consumer - blocking ALSA writes). Without
+    // this, a slow/blocking sink->write() call would stall the hardware's
+    // own capture callback, risking dropped RF samples upstream (USB
+    // transfer / iio buffer overruns) - which is worse than an occasional
+    // audio glitch.
+    class audio_queue {
+    public:
+        explicit audio_queue(std::size_t max_samples) : m_max_samples(max_samples) {}
+
+        void push(const float *data, std::size_t count) {
+            std::unique_lock<std::mutex> lock(m_mutex);
+
+            if (m_buffer.size() + count > m_max_samples) {
+                // Playback fell behind: drop the oldest buffered samples
+                // rather than growing unbounded or blocking the capture
+                // thread to wait for the consumer.
+                const std::size_t to_drop = std::min(m_buffer.size(), m_buffer.size() + count - m_max_samples);
+                m_buffer.erase(m_buffer.begin(), m_buffer.begin() + static_cast<std::ptrdiff_t>(to_drop));
+            }
+            m_buffer.insert(m_buffer.end(), data, data + count);
+
+            lock.unlock();
+            m_cv.notify_one();
+        }
+
+        // Blocks until samples are available or stop() is called. Returns
+        // false (with `out` left untouched) once stopped and drained - the
+        // signal for the playback thread to exit.
+        bool pop_all(std::vector<float> &out) {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait(lock, [this] { return !m_buffer.empty() || m_stopped; });
+
+            if (m_buffer.empty()) {
+                return false;
+            }
+
+            out.assign(m_buffer.begin(), m_buffer.end());
+            m_buffer.clear();
+            return true;
+        }
+
+        void stop() {
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_stopped = true;
+            }
+            m_cv.notify_all();
+        }
+
+    private:
+        std::mutex m_mutex;
+        std::condition_variable m_cv;
+        std::deque<float> m_buffer;
+        std::size_t m_max_samples;
+        bool m_stopped = false;
+    };
 
 } // namespace
 
@@ -212,11 +275,33 @@ int main(int argc, char **argv) {
     std::vector<float> deemph_samples;
     std::vector<float> audio_samples;
 
-    // NB: this callback runs on the source's own capture thread and calls
-    // into ALSA's blocking write directly - simplest way to get audio
-    // flowing end to end, at the cost of the capture thread stalling if
-    // playback ever falls behind. Good enough for now; a producer/consumer
-    // queue between capture and playback would decouple them properly.
+    // Up to ~2 s of buffered audio; absorbs jitter between capture and
+    // playback without letting latency creep up unboundedly.
+    audio_queue queue(sink_cfg.sample_rate_hz * 2);
+
+    // Dedicated playback thread: the only place that calls sink->write(),
+    // so a blocking/slow ALSA write can never stall the capture callback.
+    // Batches into >=100 ms chunks before writing: writing every tiny burst
+    // as it arrives leaves too little margin in ALSA's buffer against this
+    // thread's own scheduling jitter, causing XRUNs.
+    std::thread playback_thread([&queue, &sink, &sink_cfg]() {
+        const std::size_t min_write_samples = sink_cfg.sample_rate_hz / 10; // 100 ms
+        std::vector<float> pending;
+        std::vector<float> chunk;
+
+        while (queue.pop_all(chunk)) {
+            pending.insert(pending.end(), chunk.begin(), chunk.end());
+            if (pending.size() >= min_write_samples) {
+                sink->write(pending.data(), pending.size());
+                pending.clear();
+            }
+        }
+
+        if (!pending.empty()) {
+            sink->write(pending.data(), pending.size());
+        }
+    });
+
     const bool started = source->start([&](const uint8_t *data, std::size_t length) {
         iq_conv.process(data, length, iq_samples);
         channel_filter.process(iq_samples.data(), iq_samples.size(), filtered_samples);
@@ -225,12 +310,14 @@ int main(int argc, char **argv) {
         audio_rs.process(deemph_samples.data(), deemph_samples.size(), audio_samples);
 
         if (!audio_samples.empty()) {
-            sink->write(audio_samples.data(), audio_samples.size());
+            queue.push(audio_samples.data(), audio_samples.size());
         }
     });
 
     if (!started) {
         std::cerr << "failed to start reception" << std::endl;
+        queue.stop();
+        playback_thread.join();
         sink->close();
         source->close();
         return 1;
@@ -245,6 +332,8 @@ int main(int argc, char **argv) {
 
     source->stop();
     source->close();
+    queue.stop();
+    playback_thread.join();
     sink->close();
 
     return 0;

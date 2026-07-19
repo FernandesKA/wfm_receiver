@@ -148,7 +148,7 @@ namespace hardware {
             return false;
         }
 
-        constexpr std::size_t buffer_size_samples = 1 << 15; // ~16k I/Q pairs per refill
+        constexpr std::size_t buffer_size_samples = 1 << 15; // ~32k I/Q pairs per refill
         m_buffer = iio_device_create_buffer(m_rx_dev, buffer_size_samples, false);
         if (m_buffer == nullptr) {
             std::fprintf(stderr, "pluto_sdr: iio_device_create_buffer failed: %s\n", strerror(errno));
