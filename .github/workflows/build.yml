@@ -27,7 +27,8 @@ jobs:
             cmake \
             libhackrf-dev \
             libboost-json-dev \
-            libboost-program-options-dev
+            libboost-program-options-dev \
+            libiio-dev
 
       - name: Configure
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
