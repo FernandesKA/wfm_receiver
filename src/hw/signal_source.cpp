@@ -13,6 +13,7 @@
 
 #include "config/json_config_loader.h"
 #include "hw/hack_rf.h"
+#include "hw/pluto_sdr.h"
 
 namespace hardware {
 
@@ -21,8 +22,9 @@ namespace hardware {
         case config::signal_source_type::hack_rf:
             return std::make_unique<hack_rf>(cfg);
         case config::signal_source_type::pluto_sdr:
+            return std::make_unique<pluto_sdr>(cfg);
         default:
-            return nullptr; // not supported yet
+            return nullptr;
         }
     }
 

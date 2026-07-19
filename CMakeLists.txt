@@ -11,9 +11,17 @@ pkg_check_modules(HACKRF REQUIRED libhackrf)
 find_package(Boost 1.75 REQUIRED COMPONENTS json program_options)
 find_package(Threads REQUIRED)
 
+# libiio ships no pkg-config/CMake package config on Ubuntu, so locate it manually.
+find_path(IIO_INCLUDE_DIR NAMES iio.h)
+find_library(IIO_LIBRARY NAMES iio)
+if(NOT IIO_INCLUDE_DIR OR NOT IIO_LIBRARY)
+    message(FATAL_ERROR "libiio not found (install libiio-dev)")
+endif()
+
 add_library(wfm_hw
     src/hw/signal_source.cpp
     src/hw/hack_rf.cpp
+    src/hw/pluto_sdr.cpp
     src/config/json_config_loader.cpp
     src/dsp/amplitude_monitor.cpp
     src/dsp/equiripple_filter.cpp
@@ -24,11 +32,13 @@ target_include_directories(wfm_hw
         ${CMAKE_CURRENT_SOURCE_DIR}/inc
     PRIVATE
         ${HACKRF_INCLUDE_DIRS}
+        ${IIO_INCLUDE_DIR}
 )
 
 target_link_libraries(wfm_hw
     PUBLIC
         ${HACKRF_LIBRARIES}
+        ${IIO_LIBRARY}
         Boost::json
         Threads::Threads
 )

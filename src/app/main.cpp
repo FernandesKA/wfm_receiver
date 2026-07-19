@@ -48,16 +48,23 @@ namespace {
     }
 
     void print_config(const config::signal_source_config &cfg) {
-        std::cout << std::fixed << std::setprecision(3)
-                   << "Signal source parameters:\n"
+        std::cout << std::fixed << std::setprecision(3) << "Signal source parameters:\n"
                    << "  source        : " << source_type_name(cfg.type) << "\n"
-                   << "  frequency     : " << cfg.frequency_hz / 1'000'000.0 << " MHz\n"
-                   << "  sample rate   : " << config::hackrf_sample_rate_hz / 1'000'000.0 << " MHz (fixed)\n"
-                   << "  LNA gain      : " << cfg.lna_gain_db << " dB\n"
-                   << "  VGA gain      : " << cfg.vga_gain_db << " dB\n"
-                   << "  amp enable    : " << (cfg.amp_enable ? "yes" : "no") << "\n"
-                   << "  serial number : " << (cfg.serial_number.empty() ? "(auto)" : cfg.serial_number)
-                   << std::endl;
+                   << "  frequency     : " << cfg.frequency_hz / 1'000'000.0 << " MHz\n";
+
+        if (cfg.type == config::signal_source_type::pluto_sdr) {
+            std::cout << "  sample rate   : " << config::pluto_sample_rate_hz / 1'000'000.0 << " MHz (fixed)\n"
+                       << "  RX gain       : " << cfg.rx_gain_db << " dB\n"
+                       << "  uri           : " << (cfg.uri.empty() ? "(auto)" : cfg.uri) << std::endl;
+        } else {
+            std::cout << "  sample rate   : " << config::hackrf_sample_rate_hz / 1'000'000.0 << " MHz (fixed)\n"
+                       << "  LNA gain      : " << cfg.lna_gain_db << " dB\n"
+                       << "  VGA gain      : " << cfg.vga_gain_db << " dB\n"
+                       << "  amp enable    : " << (cfg.amp_enable ? "yes" : "no") << "\n"
+                       << "  serial number : " << (cfg.serial_number.empty() ? "(auto)" : cfg.serial_number)
+                       << std::endl;
+        }
+
         std::cout.unsetf(std::ios::fixed);
     }
 
@@ -68,13 +75,15 @@ int main(int argc, char **argv) {
     // clang-format off
     desc.add_options()
         ("help,h", "print this help message")
-        ("config,c", po::value<std::string>()->default_value("configs/signal_source.json"),
+        ("config,c", po::value<std::string>()->default_value("configs/pluto_signal_source.json"),
             "path to JSON signal source config")
         ("frequency,f", po::value<uint64_t>(), "center frequency in Hz (overrides config)")
         ("lna-gain", po::value<uint32_t>(), "HackRF LNA gain in dB, 0-40 step 8 (overrides config)")
         ("vga-gain", po::value<uint32_t>(), "HackRF VGA gain in dB, 0-62 step 2 (overrides config)")
         ("amp-enable", po::value<bool>(), "enable HackRF front-end amp (overrides config)")
-        ("serial", po::value<std::string>(), "device serial number (overrides config)");
+        ("serial", po::value<std::string>(), "HackRF serial number (overrides config)")
+        ("rx-gain", po::value<uint32_t>(), "PlutoSDR manual RX gain in dB (overrides config)")
+        ("uri", po::value<std::string>(), "PlutoSDR context URI, e.g. usb:5.7.5, ip:192.168.2.1 (overrides config)");
     // clang-format on
 
     po::variables_map vm;
@@ -116,6 +125,12 @@ int main(int argc, char **argv) {
     if (vm.count("serial")) {
         cfg.serial_number = vm["serial"].as<std::string>();
     }
+    if (vm.count("rx-gain")) {
+        cfg.rx_gain_db = vm["rx-gain"].as<uint32_t>();
+    }
+    if (vm.count("uri")) {
+        cfg.uri = vm["uri"].as<std::string>();
+    }
 
     print_config(cfg);
 
@@ -131,8 +146,9 @@ int main(int argc, char **argv) {
     }
 
     dsp::amplitude_monitor monitor;
-    const bool started = source->start([&monitor](const uint8_t *data, std::size_t length) {
-        monitor.add_samples(data, length);
+    const hardware::iq_sample_format format = source->sample_format();
+    const bool started = source->start([&monitor, format](const uint8_t *data, std::size_t length) {
+        monitor.add_samples(data, length, format);
     });
 
     if (!started) {

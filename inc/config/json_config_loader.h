@@ -24,8 +24,11 @@ namespace config {
     //   "lna_gain_db"    : integer (HackRF only)
     //   "vga_gain_db"    : integer (HackRF only)
     //   "amp_enable"     : bool    (HackRF only)
-    //   "serial_number"  : string
-    // Sample rate is not configurable: it's fixed at config::hackrf_sample_rate_hz.
+    //   "rx_gain_db"     : integer (PlutoSDR only)
+    //   "serial_number"  : string  (HackRF only)
+    //   "uri"            : string  (PlutoSDR only, e.g. "usb:5.7.5", "ip:192.168.2.1")
+    // Sample rate is not configurable: it's fixed at config::hackrf_sample_rate_hz
+    // or config::pluto_sample_rate_hz, depending on "source".
     // Throws std::runtime_error / boost::system::system_error on malformed input.
     signal_source_config parse_signal_source_config(const std::string &json_text);
 

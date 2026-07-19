@@ -29,6 +29,9 @@ namespace hardware {
         void stop() override;
         void close() override;
         bool is_running() const override;
+        iq_sample_format sample_format() const override {
+            return iq_sample_format::int8_iq;
+        }
 
     private:
         static int rx_callback(hackrf_transfer *transfer);

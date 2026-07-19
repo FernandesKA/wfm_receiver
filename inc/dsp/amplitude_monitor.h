@@ -15,10 +15,14 @@
 #include <cstdint>
 #include <mutex>
 
+#include "hw/signal_source.h"
+
 namespace dsp {
 
-    // Consumes raw interleaved 8-bit IQ samples (as produced by hardware::signal_source)
-    // and tracks the RMS sample amplitude since the last reset.
+    // Consumes a raw interleaved IQ buffer (as produced by hardware::signal_source)
+    // and tracks the RMS sample amplitude since the last reset. The byte
+    // layout varies by source (see hardware::iq_sample_format), so callers
+    // must pass the source's own sample_format() along with its data.
     // add_samples() accumulates |I+jQ|^2 (power, no sqrt needed per sample);
     // get_and_reset_average() takes a single sqrt of the mean power to report
     // the RMS amplitude, so the expensive sqrt only happens once per report,
@@ -27,7 +31,7 @@ namespace dsp {
     // get_and_reset_average() from a separate reporting thread.
     class amplitude_monitor {
     public:
-        void add_samples(const uint8_t *data, std::size_t length);
+        void add_samples(const uint8_t *data, std::size_t length, hardware::iq_sample_format format);
 
         // Returns the RMS amplitude accumulated since the previous call,
         // then resets the accumulator. Returns 0 if no samples were seen.

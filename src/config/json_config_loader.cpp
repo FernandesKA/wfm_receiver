@@ -53,8 +53,14 @@ namespace config {
         if (const auto *v = obj.if_contains("amp_enable")) {
             cfg.amp_enable = v->as_bool();
         }
+        if (const auto *v = obj.if_contains("rx_gain_db")) {
+            cfg.rx_gain_db = v->to_number<uint32_t>();
+        }
         if (const auto *v = obj.if_contains("serial_number")) {
             cfg.serial_number = std::string(v->as_string());
+        }
+        if (const auto *v = obj.if_contains("uri")) {
+            cfg.uri = std::string(v->as_string());
         }
 
         return cfg;

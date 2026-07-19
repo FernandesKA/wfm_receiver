@@ -22,8 +22,16 @@
 namespace hardware {
 
     // Invoked from the device's capture thread with a raw buffer of IQ samples.
-    // The buffer is only valid for the duration of the call.
+    // The buffer is only valid for the duration of the call. The byte layout
+    // depends on the source - see sample_format().
     using iq_data_callback_t = std::function<void(const uint8_t *data, std::size_t length)>;
+
+    // Native wire format of the IQ samples a source delivers to its callback.
+    // Interleaved I,Q,I,Q,... in both cases; only the per-component width differs.
+    enum class iq_sample_format {
+        int8_iq,  // signed 8-bit I, signed 8-bit Q (HackRF)
+        int16_iq, // signed 16-bit I, signed 16-bit Q, little-endian (PlutoSDR/AD9361)
+    };
 
     class signal_source {
     public:
@@ -46,6 +54,9 @@ namespace hardware {
         virtual void close() = 0;
 
         virtual bool is_running() const = 0;
+
+        // Byte layout of the samples this source passes to the callback.
+        virtual iq_sample_format sample_format() const = 0;
 
     protected:
         config::signal_source_config m_config;
