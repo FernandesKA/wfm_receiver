@@ -1,8 +1,8 @@
 {
     "source": "hack_rf",
     "frequency_hz": 100000000,
-    "lna_gain_db": 16,
-    "vga_gain_db": 20,
-    "amp_enable": false,
+    "lna_gain_db": 40,
+    "vga_gain_db": 62,
+    "amp_enable": true,
     "serial_number": ""
 }

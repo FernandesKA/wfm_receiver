@@ -48,10 +48,13 @@ namespace config {
 
         uint64_t frequency_hz = 100'000'000;
 
-        // HackRF specific gains (ignored by other sources)
-        uint32_t lna_gain_db = 16; // 0-40 dB, step 8
-        uint32_t vga_gain_db = 20; // 0-62 dB, step 2
-        bool amp_enable = false;
+        // HackRF specific gains (ignored by other sources). HackRF has no
+        // AGC (unlike PlutoSDR) - manual gain only, so default to max: on
+        // real hardware, moderate gain (16/20 dB, amp off) was too low to
+        // pull in a real station and just demodulated noise.
+        uint32_t lna_gain_db = 40; // 0-40 dB, step 8
+        uint32_t vga_gain_db = 62; // 0-62 dB, step 2
+        bool amp_enable = true;
 
         // PlutoSDR specific gain control mode (ignored by other sources):
         // "manual" | "fast_attack" | "slow_attack" | "hybrid". In manual
