@@ -25,6 +25,7 @@ add_library(wfm_hw
     src/config/json_config_loader.cpp
     src/dsp/amplitude_monitor.cpp
     src/dsp/equiripple_filter.cpp
+    src/dsp/iq_converter.cpp
 )
 
 target_include_directories(wfm_hw
