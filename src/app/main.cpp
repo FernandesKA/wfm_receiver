@@ -158,7 +158,7 @@ namespace {
 } // namespace
 
 int main(int argc, char **argv) {
-    po::options_description desc("wfm_receiver_demo options");
+    po::options_description desc("wfm_receiver options");
     // clang-format off
     desc.add_options()
         ("help,h", "print this help message")

@@ -61,5 +61,5 @@ target_link_libraries(wfm_hw
 
 target_compile_options(wfm_hw PRIVATE ${HACKRF_CFLAGS_OTHER} ${ALSA_CFLAGS_OTHER})
 
-add_executable(wfm_receiver_demo src/app/main.cpp)
-target_link_libraries(wfm_receiver_demo PRIVATE wfm_hw Boost::program_options)
+add_executable(wfm_receiver src/app/main.cpp)
+target_link_libraries(wfm_receiver PRIVATE wfm_hw Boost::program_options)

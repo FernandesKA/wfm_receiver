@@ -28,7 +28,8 @@ jobs:
             libhackrf-dev \
             libboost-json-dev \
             libboost-program-options-dev \
-            libiio-dev
+            libiio-dev \
+            libasound2-dev
 
       - name: Configure
         run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
