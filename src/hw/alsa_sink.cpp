@@ -42,13 +42,13 @@ namespace hardware {
             return false;
         }
 
-        // snd_pcm_set_params negotiates hw_params for us with sane defaults -
-        // plenty for straightforward mono playback, no need for manual
-        // hw_params/sw_params tuning here.
+        // Latency is 1 s: some sources (e.g. PlutoSDR over its network/RNDIS
+        // transport) have periodic ~200-250 ms stalls in data delivery;
+        // without a buffer bigger than that, they starve ALSA (XRUNs).
         const int result = snd_pcm_set_params(m_pcm, SND_PCM_FORMAT_FLOAT, SND_PCM_ACCESS_RW_INTERLEAVED,
                                                m_config.channels, m_config.sample_rate_hz,
-                                               1,      // allow ALSA to soft-resample if the device can't do our rate
-                                               200000  // 200 ms latency
+                                               1,       // allow ALSA to soft-resample if the device can't do our rate
+                                               1000000  // 1 s latency
         );
         if (!check(result, "snd_pcm_set_params")) {
             snd_pcm_close(m_pcm);
@@ -64,10 +64,16 @@ namespace hardware {
             return false;
         }
 
-        std::size_t written = 0;
-        while (written < count) {
-            const snd_pcm_sframes_t result =
-                snd_pcm_writei(m_pcm, samples + written, static_cast<snd_pcm_uframes_t>(count - written));
+        // snd_pcm_writei counts frames (one sample per channel), not raw
+        // float values - for mono the two happen to coincide, but for
+        // stereo `count` (interleaved L,R,L,R,...) is 2x the frame count.
+        const std::size_t channels = m_config.channels;
+        const std::size_t frames_total = count / channels;
+        std::size_t frames_written = 0;
+
+        while (frames_written < frames_total) {
+            const snd_pcm_sframes_t result = snd_pcm_writei(m_pcm, samples + frames_written * channels,
+                                                             static_cast<snd_pcm_uframes_t>(frames_total - frames_written));
 
             if (result == -EPIPE) {
                 std::fprintf(stderr, "alsa_sink: underrun (XRUN), recovering\n");
@@ -79,7 +85,7 @@ namespace hardware {
                 return false;
             }
 
-            written += static_cast<std::size_t>(result);
+            frames_written += static_cast<std::size_t>(result);
         }
 
         return true;

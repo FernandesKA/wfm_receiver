@@ -39,6 +39,7 @@ add_library(wfm_hw
     src/dsp/quadrature_demodulator.cpp
     src/dsp/rc_deemphasis_filter.cpp
     src/dsp/audio_resampler.cpp
+    src/dsp/stereo_decoder.cpp
 )
 
 target_include_directories(wfm_hw

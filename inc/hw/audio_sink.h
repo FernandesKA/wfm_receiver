@@ -18,10 +18,10 @@
 
 namespace hardware {
 
-    // Consumes mono float samples in [-1, 1] and plays them through the
-    // system's audio output. Mirrors signal_source on the RX side: an
-    // open/close-managed device abstraction, one concrete implementation
-    // per backend (currently only ALSA).
+    // Consumes float samples in [-1, 1] and plays them through the system's
+    // audio output. Mirrors signal_source on the RX side: an open/close-
+    // managed device abstraction, one concrete implementation per backend
+    // (currently only ALSA).
     class audio_sink {
     public:
         explicit audio_sink(const config::audio_sink_config &cfg) : m_config(cfg) {}
@@ -32,7 +32,10 @@ namespace hardware {
 
         virtual bool open() = 0;
 
-        // Blocking write of `count` mono float samples in [-1, 1].
+        // Blocking write of `count` float samples in [-1, 1]. For
+        // cfg.channels > 1, samples must be interleaved (L,R,L,R,... for
+        // stereo) and `count` is the total sample count (channels * frames),
+        // not the frame count.
         virtual bool write(const float *samples, std::size_t count) = 0;
 
         virtual void close() = 0;

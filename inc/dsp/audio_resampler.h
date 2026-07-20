@@ -20,20 +20,14 @@
 namespace dsp {
 
     // Rational resampler: interpolate by L, decimate by M (L/M in lowest
-    // terms, derived from cfg's input/output rates via gcd), evaluated with
-    // the standard polyphase interpolation+decimation formula - the
-    // zero-stuffed intermediate signal implied by interpolation is never
-    // actually materialized, only the taps landing on real samples are used.
+    // terms via gcd of cfg's rates), using the standard polyphase
+    // interpolation+decimation formula - zero-stuffed samples are never
+    // materialized, only taps landing on real samples are used.
     //
-    // The prototype lowpass is a Blackman-windowed sinc, cutoff at
-    // 0.45 * min(input_rate, output_rate): it's both the anti-aliasing
-    // filter for the decimation and, for the audio leg, an audio-bandwidth
-    // limiter that incidentally also removes the WFM pilot/subcarrier.
-    //
-    // Used as the final stage of the receive chain: from the demodulated/
-    // de-emphasized signal (~200 kHz) down to the sound card's rate
-    // (e.g. 48 kHz). Stateful across calls: delay line and phase/base
-    // counters carry over between process() calls.
+    // Prototype lowpass is a Blackman-windowed sinc, cutoff at
+    // 0.45 * min(input_rate, output_rate): doubles as the anti-aliasing
+    // filter and, for the audio leg, an audio-bandwidth limiter that also
+    // removes the WFM pilot/subcarrier.
     class audio_resampler final : public resampler<float> {
     public:
         explicit audio_resampler(const config::resampler_config &cfg);

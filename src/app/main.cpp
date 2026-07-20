@@ -34,12 +34,14 @@
 #include "config/fm_demodulator_config.h"
 #include "config/json_config_loader.h"
 #include "config/resampler_config.h"
+#include "config/stereo_decoder_config.h"
 #include "dsp/audio_resampler.h"
 #include "dsp/equiripple_filter.h"
 #include "dsp/filters/lowpass_2m_to_200k.hpp"
 #include "dsp/iq_converter.h"
 #include "dsp/quadrature_demodulator.h"
 #include "dsp/rc_deemphasis_filter.h"
+#include "dsp/stereo_decoder.h"
 #include "hw/audio_sink.h"
 #include "hw/signal_source.h"
 
@@ -96,13 +98,9 @@ namespace {
                                                                    : config::hackrf_sample_rate_hz;
     }
 
-    // Thread-safe bounded buffer: decouples the capture thread (producer -
-    // pushes audio samples straight from the DSP chain, must never block)
-    // from the playback thread (consumer - blocking ALSA writes). Without
-    // this, a slow/blocking sink->write() call would stall the hardware's
-    // own capture callback, risking dropped RF samples upstream (USB
-    // transfer / iio buffer overruns) - which is worse than an occasional
-    // audio glitch.
+    // Thread-safe bounded buffer decoupling the capture thread (producer,
+    // must never block) from the playback thread (consumer, blocking ALSA
+    // writes) - a slow write here must not stall hardware capture upstream.
     class audio_queue {
     public:
         explicit audio_queue(std::size_t max_samples) : m_max_samples(max_samples) {}
@@ -173,7 +171,9 @@ int main(int argc, char **argv) {
             "PlutoSDR gain_control_mode: manual|fast_attack|slow_attack|hybrid (overrides config)")
         ("rx-gain", po::value<uint32_t>(), "PlutoSDR manual RX gain in dB, manual mode only (overrides config)")
         ("uri", po::value<std::string>(), "PlutoSDR context URI, e.g. usb:5.7.5, ip:192.168.2.1 (overrides config)")
-        ("audio-device", po::value<std::string>()->default_value("default"), "ALSA playback device");
+        ("audio-device", po::value<std::string>()->default_value("default"), "ALSA playback device")
+        ("stereo", po::bool_switch()->default_value(false),
+            "decode WFM stereo (19 kHz pilot + 38 kHz DSB-SC) instead of mono");
     // clang-format on
 
     po::variables_map vm;
@@ -226,6 +226,7 @@ int main(int argc, char **argv) {
     }
 
     print_config(cfg);
+    std::cout << "  audio mode    : " << (vm["stereo"].as<bool>() ? "stereo" : "mono") << std::endl;
 
     std::unique_ptr<hardware::signal_source> source = hardware::create_signal_source(cfg);
     if (!source) {
@@ -238,8 +239,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    const bool stereo = vm["stereo"].as<bool>();
+
     // Rate actually leaving the channel filter/decimator, feeding the rest
-    // of the chain (demodulator, de-emphasis, final audio resample).
+    // of the chain (demodulator, stereo decode, de-emphasis, audio resample).
     const uint32_t decimated_rate_hz = capture_rate_hz(cfg) / dsp::filters::kLowpass2mTo200kDecim;
 
     config::fm_demodulator_config demod_cfg;
@@ -248,8 +251,12 @@ int main(int argc, char **argv) {
     config::deemphasis_filter_config deemph_cfg;
     deemph_cfg.sample_rate_hz = decimated_rate_hz;
 
+    config::stereo_decoder_config stereo_cfg;
+    stereo_cfg.sample_rate_hz = decimated_rate_hz;
+
     config::audio_sink_config sink_cfg;
     sink_cfg.device = vm["audio-device"].as<std::string>();
+    sink_cfg.channels = stereo ? 2 : 1;
 
     config::resampler_config audio_resample_cfg;
     audio_resample_cfg.input_sample_rate_hz = decimated_rate_hz;
@@ -264,28 +271,46 @@ int main(int argc, char **argv) {
     dsp::iq_converter iq_conv(source->sample_format());
     dsp::equiripple_filter channel_filter;
     dsp::quadrature_demodulator demodulator(demod_cfg);
-    dsp::rc_deemphasis_filter deemphasis(deemph_cfg);
-    dsp::audio_resampler audio_rs(audio_resample_cfg);
+
+    // Mono path, or the L channel's de-emphasis/resample when stereo.
+    dsp::rc_deemphasis_filter deemphasis_l(deemph_cfg);
+    dsp::audio_resampler audio_rs_l(audio_resample_cfg);
+
+    // Only used when --stereo is set: pilot-locked decode plus the R
+    // channel's own de-emphasis/resample chain.
+    std::unique_ptr<dsp::stereo_decoder> stereo_dec;
+    std::unique_ptr<dsp::rc_deemphasis_filter> deemphasis_r;
+    std::unique_ptr<dsp::audio_resampler> audio_rs_r;
+    if (stereo) {
+        stereo_dec = std::make_unique<dsp::stereo_decoder>(stereo_cfg);
+        deemphasis_r = std::make_unique<dsp::rc_deemphasis_filter>(deemph_cfg);
+        audio_rs_r = std::make_unique<dsp::audio_resampler>(audio_resample_cfg);
+    }
 
     // Reused across callback invocations to avoid per-call heap churn on the
     // capture thread.
     std::vector<std::complex<float>> iq_samples;
     std::vector<std::complex<float>> filtered_samples;
-    std::vector<float> demod_samples;
-    std::vector<float> deemph_samples;
-    std::vector<float> audio_samples;
+    std::vector<float> demod_samples; // composite baseband
+    std::vector<float> stereo_interleaved;
+    std::vector<float> channel_l;
+    std::vector<float> channel_r;
+    std::vector<float> deemph_l_samples;
+    std::vector<float> deemph_r_samples;
+    std::vector<float> audio_l;
+    std::vector<float> audio_r;
+    std::vector<float> audio_samples; // final buffer handed to the playback queue
 
     // Up to ~2 s of buffered audio; absorbs jitter between capture and
     // playback without letting latency creep up unboundedly.
-    audio_queue queue(sink_cfg.sample_rate_hz * 2);
+    audio_queue queue(sink_cfg.sample_rate_hz * sink_cfg.channels * 2);
 
-    // Dedicated playback thread: the only place that calls sink->write(),
-    // so a blocking/slow ALSA write can never stall the capture callback.
-    // Batches into >=100 ms chunks before writing: writing every tiny burst
-    // as it arrives leaves too little margin in ALSA's buffer against this
-    // thread's own scheduling jitter, causing XRUNs.
+    // Dedicated playback thread: the only place calling sink->write(), so a
+    // slow ALSA write can never stall the capture callback. Batches into
+    // >=100 ms chunks - tiny per-burst writes leave too little margin
+    // against scheduling jitter and cause XRUNs.
     std::thread playback_thread([&queue, &sink, &sink_cfg]() {
-        const std::size_t min_write_samples = sink_cfg.sample_rate_hz / 10; // 100 ms
+        const std::size_t min_write_samples = sink_cfg.sample_rate_hz * sink_cfg.channels / 10; // 100 ms
         std::vector<float> pending;
         std::vector<float> chunk;
 
@@ -306,8 +331,34 @@ int main(int argc, char **argv) {
         iq_conv.process(data, length, iq_samples);
         channel_filter.process(iq_samples.data(), iq_samples.size(), filtered_samples);
         demodulator.process(filtered_samples.data(), filtered_samples.size(), demod_samples);
-        deemphasis.process(demod_samples.data(), demod_samples.size(), deemph_samples);
-        audio_rs.process(deemph_samples.data(), deemph_samples.size(), audio_samples);
+
+        if (stereo) {
+            stereo_dec->process(demod_samples.data(), demod_samples.size(), stereo_interleaved);
+
+            const std::size_t n_frames = stereo_interleaved.size() / 2;
+            channel_l.resize(n_frames);
+            channel_r.resize(n_frames);
+            for (std::size_t i = 0; i < n_frames; ++i) {
+                channel_l[i] = stereo_interleaved[2 * i];
+                channel_r[i] = stereo_interleaved[2 * i + 1];
+            }
+
+            deemphasis_l.process(channel_l.data(), channel_l.size(), deemph_l_samples);
+            deemphasis_r->process(channel_r.data(), channel_r.size(), deemph_r_samples);
+
+            audio_rs_l.process(deemph_l_samples.data(), deemph_l_samples.size(), audio_l);
+            audio_rs_r->process(deemph_r_samples.data(), deemph_r_samples.size(), audio_r);
+
+            const std::size_t n_out = std::min(audio_l.size(), audio_r.size());
+            audio_samples.resize(n_out * 2);
+            for (std::size_t i = 0; i < n_out; ++i) {
+                audio_samples[2 * i] = audio_l[i];
+                audio_samples[2 * i + 1] = audio_r[i];
+            }
+        } else {
+            deemphasis_l.process(demod_samples.data(), demod_samples.size(), deemph_l_samples);
+            audio_rs_l.process(deemph_l_samples.data(), deemph_l_samples.size(), audio_samples);
+        }
 
         if (!audio_samples.empty()) {
             queue.push(audio_samples.data(), audio_samples.size());
