@@ -3,8 +3,9 @@
 Приём, демодуляция и вывод звука широкополосного FM (WFM) через SDR.
 
 Полный тракт работает end-to-end: приём IQ с HackRF или PlutoSDR → канальная
-фильтрация и децимация → FM-демодуляция → de-emphasis → ресемплинг под
-частоту звуковой карты → воспроизведение через ALSA.
+фильтрация и децимация → FM-демодуляция → (опционально) стерео-декодирование
+→ de-emphasis → ресемплинг под частоту звуковой карты → воспроизведение через
+ALSA.
 
 ## Возможности
 
@@ -12,7 +13,9 @@
   интерфейс `hardware::signal_source` (асинхронный колбэк с сырыми байтами).
 - Полный DSP-тракт демодуляции WFM: канальный фильтр + децимация
   (equiripple FIR), FM-дискриминатор, de-emphasis, финальный ресемплинг.
-- Вывод звука в реальном времени через ALSA (mono, 48 кГц).
+- **Стерео** (19 кГц pilot + 38 кГц DSB-SC, с PLL для захвата фазы pilot-тона)
+  — флаг `--stereo`; по умолчанию моно.
+- Вывод звука в реальном времени через ALSA (48 кГц, mono или stereo).
 - Конфигурация источника сигнала из JSON-файла + переопределение параметров
   через аргументы командной строки (Boost.ProgramOptions).
 - Архитектура рассчитана на несколько источников сигнала
@@ -54,7 +57,7 @@ cmake --build build
 ## Запуск
 
 ```bash
-./build/wfm_receiver --config configs/pluto_signal_source.json --frequency 103400000
+./build/wfm_receiver --config configs/pluto_signal_source.json --frequency 103400000 --stereo
 ```
 
 Без `--config` по умолчанию используется `configs/pluto_signal_source.json`.
@@ -68,6 +71,7 @@ JSON + CLI-оверрайдов), затем начинает приём и ср
 |----------------------|--------------------------------------------------------|
 | `-c, --config <path>`| путь к JSON-конфигу (по умолчанию `configs/pluto_signal_source.json`) |
 | `-f, --frequency`    | центральная частота, Гц                                |
+| `--stereo`           | декодировать стерео (19 кГц pilot + 38 кГц DSB-SC); по умолчанию моно |
 | `--lna-gain`         | HackRF: LNA gain, дБ (0-40, шаг 8)                     |
 | `--vga-gain`         | HackRF: VGA gain, дБ (0-62, шаг 2)                     |
 | `--amp-enable`       | HackRF: включить фронтенд-усилитель (true/false)        |
@@ -84,6 +88,11 @@ JSON + CLI-оверрайдов), затем начинает приём и ср
 с запасом хватает на канал WFM (~200 кГц). Фиксация нужна, чтобы
 коэффициенты канального фильтра и дециматора не пересчитывались на лету.
 
+У HackRF нет AGC (только фиксированный gain), поэтому по умолчанию
+используется максимум (`lna_gain_db=40`, `vga_gain_db=62`, `amp_enable=true`)
+— на реальном железе умеренный gain часто не вытягивает станцию из шума. У
+PlutoSDR по умолчанию `fast_attack` (AGC) — по той же причине.
+
 ### Примеры JSON-конфигов
 
 HackRF (`configs/signal_source.json`):
@@ -92,9 +101,9 @@ HackRF (`configs/signal_source.json`):
 {
     "source": "hack_rf",
     "frequency_hz": 100000000,
-    "lna_gain_db": 16,
-    "vga_gain_db": 20,
-    "amp_enable": false,
+    "lna_gain_db": 40,
+    "vga_gain_db": 62,
+    "amp_enable": true,
     "serial_number": ""
 }
 ```
@@ -112,7 +121,11 @@ PlutoSDR (`configs/pluto_signal_source.json`):
 ```
 
 `uri`/`serial_number`, оставленные пустыми, означают автоопределение первого
-найденного устройства.
+найденного устройства. Если PlutoSDR виден и по USB, и по сети (`ip://`),
+предпочтительнее явно указать `--uri usb:...`: подключение по сети (RNDIS/
+iiod) периодически даёт паузы в доставке данных ~200-250 мс, что при
+неудачном стечении обстоятельств всё ещё может вызвать редкие прерывания
+звука даже с секундным буфером ALSA (см. ниже); по USB таких пауз не было.
 
 ## Структура проекта
 
@@ -123,12 +136,14 @@ inc/
                     audio_sink (+ alsa_sink)
   dsp/              DSP-блоки: интерфейсы (block, channel_filter, resampler,
                     fm_demodulator, deemphasis_filter) и их реализации
+                    (equiripple_filter, quadrature_demodulator,
+                    rc_deemphasis_filter, audio_resampler, stereo_decoder)
   dsp/filters/      сгенерированные коэффициенты FIR-фильтров
 src/
   hw/, config/, dsp/  реализации соответствующих заголовков
   app/main.cpp        приложение: CLI, полный приёмный тракт, аудиовывод
 configs/              примеры JSON-конфигов (HackRF, PlutoSDR)
-matlab/               синтез коэффициентов фильтра
+matlab/               синтез коэффициентов канального фильтра
 .github/workflows/    CI (сборка на GitHub Actions, x86_64)
 ```
 
@@ -147,22 +162,29 @@ HackRF, `int16_iq` у PlutoSDR) сообщается через `sample_format()
 
 ```
 signal_source (2 МГц / 2.083 МГц, int8/int16)
-  -> iq_converter          нормализация в std::complex<float>
-  -> equiripple_filter      канальный фильтр + децимация x10 (Parks-McClellan FIR)
+  -> iq_converter           нормализация в std::complex<float>
+  -> equiripple_filter       канальный фильтр + децимация x10 (Parks-McClellan FIR)
   -> quadrature_demodulator  FM-дискриминатор: arg(z[n]*conj(z[n-1]))
-  -> rc_deemphasis_filter    компенсация pre-emphasis (50 мкс)
-  -> audio_resampler         полифазный ресемплинг под 48 кГц
-  -> alsa_sink                воспроизведение
+  -> [--stereo] stereo_decoder   PLL по 19 кГц pilot + синхронный демод L-R,
+                                 выдаёт interleaved L,R на той же частоте
+  -> rc_deemphasis_filter    компенсация pre-emphasis (50 мкс), отдельно на
+                             канал при стерео
+  -> audio_resampler         полифазный ресемплинг под 48 кГц, отдельно на
+                             канал при стерео
+  -> alsa_sink                воспроизведение (mono или interleaved stereo)
 ```
+
+`stereo_decoder` обязательно стоит до `rc_deemphasis_filter`/`audio_resampler`
+— их срез уже вырезает 19/38 кГц поднесущие, декодировать стерео после них
+невозможно.
 
 Приём и воспроизведение работают на разных потоках, связанных
 потокобезопасной очередью (`audio_queue` в `main.cpp`): колбэк приёма
 никогда не блокируется на записи в ALSA, чтобы не тормозить сам захват
-данных с железа.
+данных с железа. ALSA-буфер настроен на 1 секунду — с запасом на случай
+пауз в доставке данных от источника (см. заметку про `--uri` выше).
 
 ### Известные упрощения
 
 - `equiripple_filter` спроектирован ровно под 2 МГц (HackRF); для PlutoSDR
   (2.083334 МГц) частоты среза фильтра сдвинуты на те же ~4%.
-- Реализовано только моно (composite-сигнал не декодируется в стерео:
-  19 кГц pilot + 38 кГц DSB-SC).
