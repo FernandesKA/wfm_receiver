@@ -33,6 +33,7 @@
 #include "config/deemphasis_filter_config.h"
 #include "config/fm_demodulator_config.h"
 #include "config/json_config_loader.h"
+#include "config/rds_decoder_config.h"
 #include "config/resampler_config.h"
 #include "config/stereo_decoder_config.h"
 #include "dsp/audio_resampler.h"
@@ -41,6 +42,8 @@
 #include "dsp/iq_converter.h"
 #include "dsp/quadrature_demodulator.h"
 #include "dsp/rc_deemphasis_filter.h"
+#include "dsp/rds_demodulator.h"
+#include "dsp/rds_group_decoder.h"
 #include "dsp/stereo_decoder.h"
 #include "hw/audio_sink.h"
 #include "hw/signal_source.h"
@@ -254,6 +257,9 @@ int main(int argc, char **argv) {
     config::stereo_decoder_config stereo_cfg;
     stereo_cfg.sample_rate_hz = decimated_rate_hz;
 
+    config::rds_decoder_config rds_cfg;
+    rds_cfg.sample_rate_hz = decimated_rate_hz;
+
     config::audio_sink_config sink_cfg;
     sink_cfg.device = vm["audio-device"].as<std::string>();
     sink_cfg.channels = stereo ? 2 : 1;
@@ -286,6 +292,12 @@ int main(int argc, char **argv) {
         deemphasis_r = std::make_unique<dsp::rc_deemphasis_filter>(deemph_cfg);
         audio_rs_r = std::make_unique<dsp::audio_resampler>(audio_resample_cfg);
     }
+
+    // Diagnostic text output only, so RDS runs always-on without a CLI flag.
+    dsp::rds_demodulator rds_demod(rds_cfg);
+    dsp::rds_group_decoder rds_decoder;
+    std::vector<uint8_t> rds_bits;
+    bool rds_pi_printed = false;
 
     // Reused across callback invocations to avoid per-call heap churn on the
     // capture thread.
@@ -331,6 +343,23 @@ int main(int argc, char **argv) {
         iq_conv.process(data, length, iq_samples);
         channel_filter.process(iq_samples.data(), iq_samples.size(), filtered_samples);
         demodulator.process(filtered_samples.data(), filtered_samples.size(), demod_samples);
+
+        rds_demod.process(demod_samples.data(), demod_samples.size(), rds_bits);
+        if (!rds_bits.empty()) {
+            rds_decoder.push_bits(rds_bits.data(), rds_bits.size());
+
+            if (!rds_pi_printed && rds_decoder.has_pi()) {
+                rds_pi_printed = true;
+                std::cout << "RDS PI: 0x" << std::hex << std::setw(4) << std::setfill('0') << rds_decoder.pi()
+                           << std::dec << std::setfill(' ') << std::endl;
+            }
+            if (rds_decoder.consume_ps_changed()) {
+                std::cout << "RDS PS: '" << rds_decoder.program_service() << "'" << std::endl;
+            }
+            if (rds_decoder.consume_rt_changed()) {
+                std::cout << "RDS RT: '" << rds_decoder.radio_text() << "'" << std::endl;
+            }
+        }
 
         if (stereo) {
             stereo_dec->process(demod_samples.data(), demod_samples.size(), stereo_interleaved);
